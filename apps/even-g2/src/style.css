@@ -1,0 +1,90 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #183a2d;
+  background: #f3f5ef;
+  font-synthesis: none;
+}
+body {
+  margin: 0;
+  padding: 36px 20px;
+}
+main {
+  max-width: 640px;
+  margin: auto;
+}
+.eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+}
+h1 {
+  font-size: 28px;
+  font-weight: 600;
+  margin: 24px 0;
+}
+#connection,
+#device {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+#screen {
+  box-sizing: border-box;
+  min-height: 288px;
+  width: 100%;
+  padding: 20px;
+  background: #102319;
+  color: #bdeba7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.65;
+  font-size: 17px;
+  border-radius: 8px;
+}
+nav {
+  display: flex;
+  gap: 12px;
+}
+#screen.scene-preview {
+  position: relative;
+  padding: 0;
+  min-height: 0;
+  aspect-ratio: 2;
+  overflow: hidden;
+  background: #000;
+}
+.scene-surface {
+  display: block;
+  position: absolute;
+  width: 576px;
+  height: 288px;
+  transform-origin: top left;
+}
+.scene-surface canvas {
+  image-rendering: pixelated;
+}
+.scene-text {
+  box-sizing: border-box;
+  white-space: pre-wrap;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  line-height: 28px;
+  font-size: 21px;
+  background: #000;
+}
+button {
+  padding: 12px 18px;
+  border: 1px solid #8d9f8e;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+button:focus-visible {
+  outline: 3px solid #42734d;
+  outline-offset: 3px;
+}
+.hint {
+  font-size: 13px;
+  color: #546554;
+  line-height: 1.7;
+}

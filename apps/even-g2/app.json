@@ -1,0 +1,27 @@
+{
+  "package_id": "dev.evenagent.dashboard",
+  "edition": "202601",
+  "name": "Agent Dashboard",
+  "version": "0.6.0",
+  "min_sdk_version": "0.0.16",
+  "entrypoint": "index.html",
+  "permissions": [
+    {
+      "name": "network",
+      "desc": "Exchange dashboard, device status and requested sensor streams with your PC.",
+      "whitelist": [
+        "https://neoneo-1.tailb20a71.ts.net",
+        "wss://neoneo-1.tailb20a71.ts.net"
+      ]
+    },
+    {
+      "name": "g2-microphone",
+      "desc": "Stream G2 microphone audio to your PC only while a timed capture command is active."
+    },
+    {
+      "name": "phone-microphone",
+      "desc": "Optionally stream phone microphone audio when explicitly selected by a PC capture command."
+    }
+  ],
+  "supported_languages": ["en", "ja"]
+}

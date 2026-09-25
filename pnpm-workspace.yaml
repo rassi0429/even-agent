@@ -1,0 +1,8 @@
+packages:
+  - apps/*
+  - packages/*
+allowBuilds:
+  esbuild: true
+minimumReleaseAgeExclude:
+  - '@evenrealities/even_hub_sdk@0.0.16'
+  - vite@8.3.1

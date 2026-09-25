@@ -1,0 +1,22 @@
+{
+  "name": "@even-agent/even-g2",
+  "version": "0.6.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "pack:app": "evenhub pack app.json dist --sdk-ver 0.0.16 -o ../../.local/agent-dashboard.ehpk",
+    "qr": "evenhub qr"
+  },
+  "dependencies": {
+    "@even-agent/protocol": "workspace:*",
+    "@evenrealities/even_hub_sdk": "0.0.16"
+  },
+  "devDependencies": {
+    "@evenrealities/evenhub-cli": "0.1.14",
+    "@evenrealities/evenhub-simulator": "0.9.5",
+    "vite": "8.3.1"
+  }
+}

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Even Agent Dashboard</title>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">EVEN G2 / AGENT DASHBOARD · v0.6.0</p>
+      <h1>PCから、G2の画面へ。</h1>
+      <p id="connection" role="status">Server: connecting</p>
+      <p id="device" role="status">G2: Even Appの接続を待っています</p>
+      <pre id="screen" aria-label="G2プレビュー"></pre>
+      <nav aria-label="ページ操作">
+        <button id="previous">前のページ</button
+        ><button id="next">次のページ</button>
+      </nav>
+      <p class="hint">G2: タップで次ページ。ダブルタップで終了確認。</p>
+      <p class="hint">
+        PCで指定した配置・画像・アニメーションを表示します。実機の文字幅・フォントとは異なります。
+      </p>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

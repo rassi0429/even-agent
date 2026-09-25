@@ -1,0 +1,47 @@
+{
+  "name": "even-agent",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.11.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter './apps/*' dev",
+    "build": "pnpm -r build",
+    "start": "node scripts/server-supervisor.mjs",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm format:check",
+    "hello": "node scripts/hello.mjs",
+    "screen": "node scripts/screen.mjs",
+    "device": "node scripts/device.mjs",
+    "screen:demo": "tsx scripts/make-screen-demo.ts",
+    "device:setup": "node scripts/device-setup.mjs",
+    "pack:g2": "pnpm --filter @even-agent/even-g2 pack:app",
+    "release:g2": "pnpm check && pnpm pack:g2 && node scripts/prepare-release.mjs",
+    "server:install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-server-task.ps1",
+    "server:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop-server.ps1",
+    "start:server": "pnpm --filter @even-agent/server start",
+    "start:dashboard": "pnpm --filter @even-agent/dashboard start",
+    "dashboard:restart": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/restart-component.ps1 -Component dashboard",
+    "api:restart": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/restart-component.ps1 -Component server"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.18.1",
+    "eslint": "^9.39.1",
+    "globals": "^16.5.0",
+    "prettier": "3.9.9",
+    "qr-image": "3.2.0",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.1",
+    "vitest": "5.0.1",
+    "ws": "^8.18.3"
+  }
+}
