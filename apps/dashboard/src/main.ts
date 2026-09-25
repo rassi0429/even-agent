@@ -4,6 +4,8 @@ import { resolve } from 'node:path';
 import { createDashboard } from './app.js';
 import { LocalAgentMonitor, defaultMonitorPaths } from './agents.js';
 import { ClaudeCloudMonitor, CombinedAgentMonitor } from './claude-cloud.js';
+import { UsageMonitor } from './usage.js';
+import { readCodexUsage, readClaudeUsage } from './usage-readers.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 if (existsSync(resolve(root, '.env')))
@@ -27,6 +29,17 @@ const app = createDashboard({
     `http://127.0.0.1:${process.env.PORT || 3000}`,
   apiToken: process.env.API_TOKEN || undefined,
   agentMonitor: monitor,
+  usageMonitor:
+    monitor && process.env.USAGE_MONITOR !== '0'
+      ? new UsageMonitor({
+          codex: (signal) => readCodexUsage(signal),
+          claude: (signal) =>
+            readClaudeUsage(
+              resolve(paths.claudeHomes[0]!, '.credentials.json'),
+              signal,
+            ),
+        })
+      : undefined,
 });
 for (const signal of ['SIGINT', 'SIGTERM'])
   process.once(signal, () => {

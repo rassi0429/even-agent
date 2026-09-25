@@ -59,7 +59,11 @@ it('maps cloud states without duplicating local bridge sessions or reviving old 
           worker_status: 'idle',
           last_event_at: new Date(now).toISOString(),
         }),
-        session({ id: 'old-done', worker_status: 'idle' }),
+        session({
+          id: 'old-done',
+          worker_status: 'idle',
+          last_event_at: new Date(now - 900_000).toISOString(),
+        }),
         session({ id: 'local', environment_kind: 'bridge' }),
         session({ id: 'archived', status: 'archived' }),
         session({ id: 'future-status', worker_status: 'new-state' }),
@@ -120,7 +124,9 @@ it('uses fixed-origin read-only auth, caches for 30 seconds, and ages terminal r
   clock += 29_999;
   await cloud.refresh();
   expect(request).toHaveBeenCalledTimes(1);
-  clock += 120_000;
+  clock = now + 899_999;
+  expect(cloud.snapshot().tasks).toHaveLength(1);
+  clock = now + 900_000;
   expect(cloud.snapshot().tasks).toEqual([]);
 });
 

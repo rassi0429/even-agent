@@ -31,12 +31,15 @@ export function agentFlow(rows: DisplayIconRow[]) {
   });
 }
 
-export function agentFlowPages(rows: DisplayIconRow[]): DisplayIconRow[][] {
+export function agentFlowPages(
+  rows: DisplayIconRow[],
+  maxRows = 7,
+): DisplayIconRow[][] {
   const pages: DisplayIconRow[][] = [[]];
   for (const row of rows) {
     let page = pages.at(-1)!;
     if (
-      page.length >= 7 ||
+      page.length >= maxRows ||
       agentFlow([...page, row]).at(-1)!.line >= MAX_FLOW_LINES
     ) {
       page = [];

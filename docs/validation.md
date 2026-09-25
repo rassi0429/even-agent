@@ -96,3 +96,11 @@ Simulatorの `context_menu` 操作でイベント4→5を観測し、メニュ�
 - 実際の常駐環境でdashboard:restartを実行し、表示アプリPIDのみ変更、API PIDとG2セッションIDが維持されたことを確認。
 - api:restartも実行し、API PIDのみ変更、表示アプリPID維持、ライブ画面再投稿とTailscale HTTPS healthの復帰を確認。
 - ブラウザで日時・曜日・時計・G2残量・AI行を確認。実機へ接続中のPluginは既存0.6.0を使用。今回の変更後のG2目視はユーザー確認待ち。
+
+## ヘッダーのスクロールバー修正（2026-09-26）
+
+- ユーザー報告を受け、公式EvenHub Simulator 0.9.5で再現。文字枠28pxに上下4pxのpaddingを指定したため、時計・Claude・Codex枠の右端にスクロールバーが出ていた。ブラウザプレビューでは再現しなかった。
+- 文字の1行分28pxと上下paddingの合計36pxを確保し、2行の場合は64pxへ変更。罫線も4px下へ移動。
+- localhost:3002の検証用APIへ本番の表示データを複製し、Vite経由でSimulatorを接続。模擬端末情報は検証APIにだけ送られ、実機情報には混ざらない。
+- Simulatorのglasses framebufferで修正前後を確認。PNGは緑RGBと透明度で表現されるため、確認画像は黒背景に合成して可視化した。
+- pnpm check成功（44テスト、型・lint・build・format）。ヘッダーの有効高さを検査する回帰チェックを追加。表示アプリのみ更新、Plugin更新は不要。実機の目視は未確認。

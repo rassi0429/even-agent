@@ -8,6 +8,8 @@ import {
 import type { AgentSnapshot, AgentStatus } from './agents.js';
 import { agentScene } from './agent-scene.js';
 import { agentFlowPages } from './agent-flow.js';
+import type { UsageSnapshot } from './usage.js';
+import { usageText, windowRemaining } from './header-usage.js';
 
 const dateTimeFormatter = new Intl.DateTimeFormat('ja-JP', {
   timeZone: 'Asia/Tokyo',
@@ -85,6 +87,7 @@ export function composeAgentDisplay(
   snapshot: AgentSnapshot,
   now = new Date(),
   device?: DeviceTelemetry,
+  usage?: UsageSnapshot,
 ): DisplayState {
   const labels: Record<AgentStatus, string> = {
     running: '実行',
@@ -174,7 +177,11 @@ export function composeAgentDisplay(
       ? `   G2 ${device.batteryLevel}%${device.isCharging ? ' +' : ''}`
       : '';
   const clock = dashboardClock(now) + battery;
-  const pages = agentFlowPages(iconRows);
+  const usageFallback = usage
+    ? `Claude 5H ${usageText(windowRemaining(usage.claude, 300))} W ${usageText(windowRemaining(usage.claude, 10080))}   Codex ${usageText(usage.codex.remainingPercent)}`
+    : '';
+  // Native text budget is eight: clock + two usage labels + up to five tasks.
+  const pages = agentFlowPages(iconRows, usage ? 5 : 7);
   const total = pages.length;
   let offset = 0;
   return {
@@ -189,16 +196,19 @@ export function composeAgentDisplay(
       const footer = total > 1 ? `${index + 1}/${total}` : '';
       return {
         id: `page-${index}`,
-        content: [clock, body + pageNumber].filter(Boolean).join('\n'),
+        content: [clock, usageFallback, body + pageNumber]
+          .filter(Boolean)
+          .join('\n'),
         offlineContent: `${clock}\nOFFLINE\n${body}${pageNumber}`.trimEnd(),
         iconRows: pageRows.length ? pageRows : undefined,
         footer,
-        scene: agentScene(pageRows, footer, true, clock),
+        scene: agentScene(pageRows, footer, true, clock, usage),
         offlineScene: agentScene(
           pageRows,
           `OFFLINE ${footer}`.trim(),
           false,
           clock,
+          usage,
         ),
       };
     }),

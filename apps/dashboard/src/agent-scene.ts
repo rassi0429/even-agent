@@ -1,6 +1,12 @@
 import type { DisplayIconRow, Scene, SceneElement } from '@even-agent/protocol';
 import { iconStrip, ICON_WIDTH, ROW_HEIGHT, FRAME_MS } from './agent-icons.js';
 import { agentFlow, LABEL_X } from './agent-flow.js';
+import {
+  headerUsageFrames,
+  usageText,
+  windowRemaining,
+} from './header-usage.js';
+import type { UsageSnapshot } from './usage.js';
 const frameCache = new Map<string, string[]>();
 // Two 288px tiles span the full canvas; 20px is the native minimum image height.
 const ruleFrame = '0'.repeat(288 * 2) + '8'.repeat(288) + '0'.repeat(288 * 17);
@@ -45,6 +51,7 @@ export function agentScene(
   footer: string,
   online = true,
   clock = ' ',
+  usage?: UsageSnapshot,
 ): Scene {
   const entries = agentFlow(rows);
   const height = entries.length ? (entries.at(-1)!.line + 1) * ROW_HEIGHT : 0;
@@ -55,14 +62,44 @@ export function agentScene(
       id: 'clock',
       x: 0,
       y: 0,
-      width: 576,
-      height: 56,
+      width: usage ? 300 : 576,
+      // G2 needs a 28px line box in addition to vertical padding.
+      height: usage ? (footer ? 64 : 36) : 56,
       text: footer ? `${clock}\n${footer}` : clock,
       padding: 4,
       border: 0,
       brightness: 4,
     },
   ];
+  if (usage) {
+    for (const [provider, x, width, text] of [
+      [
+        'claude',
+        326,
+        166,
+        `5H ${usageText(online ? windowRemaining(usage.claude, 300) : null)} W ${usageText(online ? windowRemaining(usage.claude, 10080) : null)}`,
+      ],
+      [
+        'codex',
+        512,
+        64,
+        usageText(online ? usage.codex.remainingPercent : null),
+      ],
+    ] as const) {
+      elements.push({
+        type: 'text',
+        id: `usage-${provider}`,
+        x,
+        y: 0,
+        width,
+        height: 36,
+        text,
+        padding: 4,
+        border: 0,
+        brightness: 4,
+      });
+    }
+  }
   for (let half = 0; entries.length && half < 2; half++) {
     const start = half * 288;
     const end = start + 288;
@@ -108,17 +145,22 @@ export function agentScene(
       brightness: 4,
     })),
   );
+  const header = usage ? headerUsageFrames(!!footer, online) : undefined;
+  const rules: SceneElement[] = [];
   for (let half = 0; half < 2; half++)
-    elements.push({
+    rules.push({
       type: 'image',
       id: `header-rule-${half}`,
       x: half * 288,
-      y: footer ? 60 : 32,
+      y: header ? 0 : footer ? 60 : 32,
       width: 288,
-      height: 20,
-      frames: [ruleFrame],
+      height: header?.height ?? 20,
+      frames: [header?.frames[half] ?? ruleFrame],
       frameMs: FRAME_MS,
       loop: false,
     });
-  return { elements };
+  // Header bitmaps are behind the native text; label bounds exclude the icons.
+  return {
+    elements: header ? [...rules, ...elements] : [...elements, ...rules],
+  };
 }

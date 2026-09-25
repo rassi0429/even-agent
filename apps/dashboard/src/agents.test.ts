@@ -85,7 +85,8 @@ it('uses Claude event time rather than file mtime and never emits message conten
   )!;
   expect(done.status).toBe('done');
   expect(done.updatedAt).toBe(now + 2000);
-  expect(visibleTask(done, now + 180_000)).toBeUndefined();
+  expect(visibleTask(done, done.updatedAt + 899_999)?.status).toBe('done');
+  expect(visibleTask(done, done.updatedAt + 900_000)).toBeUndefined();
   expect(visibleTask(task, now + 200_000)?.status).toBe('unknown');
   expect(visibleTask(task, now + 1_900_000)).toBeUndefined();
 });
@@ -161,7 +162,7 @@ it('reads current Codex turns and Claude Code/Cowork files without modifying the
   await writeFile(
     join(cli, 'projects/project/session.jsonl'),
     JSON.stringify(
-      event('assistant', { stop_reason: 'end_turn' }, now - 600_000),
+      event('assistant', { stop_reason: 'end_turn' }, now - 900_000),
     ) + '\n',
   );
   const next = await monitor.read();

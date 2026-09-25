@@ -34,7 +34,7 @@ export function projectName(cwd: unknown): string {
     .replace(/\s+/g, ' ')
     .slice(0, 80);
 }
-const DONE_VISIBLE_MS = 120_000;
+const DONE_VISIBLE_MS = 15 * 60_000;
 const STALE_MS = 180_000;
 const MAX_AGE_MS = 30 * 60_000;
 export function visibleTask(
@@ -43,8 +43,8 @@ export function visibleTask(
 ): AgentTask | undefined {
   if (!task.updatedAt || task.updatedAt > now + 60_000) return;
   const age = now - task.updatedAt;
-  if (['done', 'stopped'].includes(task.status))
-    return age < DONE_VISIBLE_MS ? task : undefined;
+  if (task.status === 'done') return age < DONE_VISIBLE_MS ? task : undefined;
+  if (task.status === 'stopped') return age < 120_000 ? task : undefined;
   if (age > MAX_AGE_MS) return;
   return age > STALE_MS ? { ...task, status: 'unknown' } : task;
 }

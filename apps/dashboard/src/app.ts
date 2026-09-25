@@ -7,6 +7,7 @@ import {
 } from '@even-agent/protocol';
 import type { AgentSnapshot } from './agents.js';
 import { composeAgentDisplay, composeDisplay } from './display.js';
+import type { UsageSnapshot } from './usage.js';
 
 export interface DashboardOptions {
   serverUrl: string;
@@ -15,6 +16,11 @@ export interface DashboardOptions {
   now?: () => number;
   intervalMs?: number;
   agentPollMs?: number;
+  usageMonitor?: {
+    refresh(): Promise<void>;
+    snapshot(): UsageSnapshot;
+    stop(): void;
+  };
 }
 
 // The only runtime link to the gateway is its documented HTTP API.
@@ -82,7 +88,13 @@ export function createDashboard(options: DashboardOptions) {
         ? deviceTelemetrySchema.parse(rawDevice.device)
         : undefined;
       const display = options.agentMonitor
-        ? composeAgentDisplay(state, snapshot, new Date(now()), device)
+        ? composeAgentDisplay(
+            state,
+            snapshot,
+            new Date(now()),
+            device,
+            options.usageMonitor?.snapshot(),
+          )
         : composeDisplay(state, new Date(now()));
       const pages = JSON.stringify(display.pages);
       if (
@@ -142,7 +154,12 @@ export function createDashboard(options: DashboardOptions) {
     reply.header('Cache-Control', 'no-store');
     return latest ?? null;
   });
+  app.get('/api/usage', async (_request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    return options.usageMonitor?.snapshot() ?? null;
+  });
   const timer = setInterval(() => {
+    void options.usageMonitor?.refresh();
     if (!publishing) update = tick();
   }, options.intervalMs ?? 1000);
   const agentTimer = setInterval(() => {
@@ -151,11 +168,13 @@ export function createDashboard(options: DashboardOptions) {
   timer.unref();
   agentTimer.unref();
   app.addHook('onReady', async () => {
+    void options.usageMonitor?.refresh();
     void refreshAgents();
     update = tick();
   });
   app.addHook('onClose', async () => {
     stopped = true;
+    options.usageMonitor?.stop();
     clearInterval(timer);
     clearInterval(agentTimer);
     await update;

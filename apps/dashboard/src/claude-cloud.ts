@@ -7,6 +7,7 @@ const object = (value: unknown): ObjectValue =>
 const string = (value: unknown): string =>
   typeof value === 'string' ? value : '';
 const END_VISIBLE_MS = 120_000;
+const DONE_VISIBLE_MS = 15 * 60_000;
 
 // Private endpoint used by Claude Code 2.1.269. Only metadata GETs are issued.
 const ENDPOINT = 'https://api.anthropic.com/v1/code/sessions?limit=100';
@@ -36,7 +37,7 @@ export function parseCloudSessions(value: unknown, now: number): AgentTask[] {
     if (!Number.isFinite(updatedAt) || updatedAt > now + 60_000) return [];
     if (
       ['done', 'stopped', 'failed'].includes(status) &&
-      now - updatedAt >= END_VISIBLE_MS
+      now - updatedAt >= (status === 'done' ? DONE_VISIBLE_MS : END_VISIBLE_MS)
     )
       return [];
     const sources = object(session.config).sources;
@@ -88,7 +89,8 @@ export class ClaudeCloudMonitor {
       tasks: this.state.tasks.filter(
         (task) =>
           !['done', 'stopped', 'failed'].includes(task.status) ||
-          this.now() - task.updatedAt < END_VISIBLE_MS,
+          this.now() - task.updatedAt <
+            (task.status === 'done' ? DONE_VISIBLE_MS : END_VISIBLE_MS),
       ),
     };
   }

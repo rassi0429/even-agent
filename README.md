@@ -21,6 +21,7 @@ Codex / Claude → dashboard (:3001) → 画面投稿API → server (:3000)
 - [サーバーの起動・停止・再起動・自動起動](docs/server-operations.md)
 - [AgentからのAPI利用例](docs/api-examples.md)
 - [Codex・Claude進捗モニター](docs/agent-monitor.md)
+- [ヘッダーのClaude・Codex残り利用枠](docs/usage-header.md)
 
 最新版: [Agent Dashboard 0.6.0](releases/agent-dashboard-0.6.0.ehpk)。PCから任意のテキスト・画像・アニメーション・配置を指定する汎用クライアント。[画面API・サンプル](docs/screen-api.md)、[インストール](docs/install-beta.md)。
 
