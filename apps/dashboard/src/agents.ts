@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { open, readdir, readFile, stat } from 'node:fs/promises';
 import { join, basename, win32 } from 'node:path';
 import { homedir } from 'node:os';
+import { codexActivity, claudeActivity } from './agent-activity.js';
 
 export type AgentStatus =
   'running' | 'waiting' | 'done' | 'failed' | 'stopped' | 'unknown';
@@ -12,6 +13,7 @@ export interface AgentTask {
   project: string;
   status: AgentStatus;
   updatedAt: number;
+  activity?: string;
 }
 export interface AgentSnapshot {
   tasks: AgentTask[];
@@ -43,13 +45,17 @@ export function visibleTask(
 ): AgentTask | undefined {
   if (!task.updatedAt || task.updatedAt > now + 60_000) return;
   const age = now - task.updatedAt;
+  if (task.status !== 'running' || age > STALE_MS) {
+    task = { ...task };
+    delete task.activity;
+  }
   if (task.status === 'done') return age < DONE_VISIBLE_MS ? task : undefined;
   if (task.status === 'stopped') return age < 120_000 ? task : undefined;
   if (age > MAX_AGE_MS) return;
   return age > STALE_MS ? { ...task, status: 'unknown' } : task;
 }
 
-// Read only a bounded tail; ignore incomplete JSON lines and all message text.
+// Read only a bounded tail; ignore incomplete JSON lines.
 export async function readTail(
   path: string,
   maxBytes = 256 * 1024,
@@ -109,6 +115,17 @@ export function parseClaudeEvents(
       status = event.is_error === true ? 'failed' : 'done';
     // Housekeeping, queue entries and imported file mtimes are not activity.
     if (!status) continue;
+    const toolResult =
+      event.type === 'user' &&
+      blocks.some((block) => block.type === 'tool_result');
+    const activity =
+      status === 'running'
+        ? event.type === 'assistant'
+          ? (claudeActivity(message) ?? task?.activity)
+          : toolResult
+            ? task?.activity
+            : undefined
+        : undefined;
     task = {
       id: text(event.sessionId) || fallbackId,
       agent: 'Claude',
@@ -116,6 +133,7 @@ export function parseClaudeEvents(
       project: event.cwd ? projectName(event.cwd) : task?.project || 'task',
       status,
       updatedAt: timestamp,
+      ...(activity ? { activity } : {}),
     };
   }
   return task;
@@ -199,6 +217,22 @@ export class LocalAgentMonitor {
       const activityQuery = history.prepare(
         'SELECT MAX(created_at_ms) AS latest FROM thread_items WHERE thread_id=? AND turn_id=?',
       );
+      // Select only visible message text and tool labels, never reasoning, arguments or output.
+      const columns = history.prepare('PRAGMA table_info(thread_items)').all();
+      const detailQuery =
+        columns.some((column) => column.name === 'item_json') &&
+        columns.some((column) => column.name === 'item_type')
+          ? history.prepare(`SELECT item_type AS type,
+            json_extract(item_json, '$.phase') AS phase,
+            CASE WHEN item_type='agentMessage' AND json_extract(item_json,'$.phase') IN ('commentary','final')
+              THEN substr(json_extract(item_json,'$.text'),1,4000) END AS text,
+            json_extract(item_json,'$.tool') AS tool,
+            json_extract(item_json,'$.status') AS status,
+            json_extract(item_json,'$.changes[0].path') AS path
+          FROM thread_items WHERE thread_id=? AND turn_id=? AND json_valid(item_json)
+            AND item_type IN ('agentMessage','commandExecution','fileChange','webSearch','imageView','mcpToolCall','dynamicToolCall')
+          ORDER BY created_at_ms DESC, rollout_ordinal DESC LIMIT 12`)
+          : undefined;
       const result: AgentTask[] = [];
       for (const row of rows) {
         const turn = turnQuery.get(row.id!);
@@ -223,6 +257,15 @@ export class LocalAgentMonitor {
           },
           this.now(),
         );
+        if (task?.status === 'running' && detailQuery) {
+          for (const item of detailQuery.all(row.id!, turn.turn_id!)) {
+            const detail = codexActivity(item);
+            if (detail) {
+              task.activity = detail;
+              break;
+            }
+          }
+        }
         if (task) result.push(task);
       }
       return result;
@@ -349,7 +392,14 @@ export class LocalAgentMonitor {
           (!tasks.has(task.id) ||
             tasks.get(task.id)!.updatedAt <= task.updatedAt)
         )
-          tasks.set(task.id, task);
+          tasks.set(task.id, {
+            ...task,
+            ...(task.status === 'running' &&
+            tasks.get(task.id)?.status === 'running' &&
+            tasks.get(task.id)?.activity
+              ? { activity: tasks.get(task.id)!.activity }
+              : {}),
+          });
       }
     }
     return [...tasks.values()];

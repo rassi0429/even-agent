@@ -121,14 +121,33 @@ it('reads current Codex turns and Claude Code/Cowork files without modifying the
   db.close();
   const history = new DatabaseSync(join(codex, 'thread_history_1.sqlite'));
   history.exec(
-    'CREATE TABLE thread_turns(thread_id TEXT,turn_id TEXT,status TEXT,started_at INTEGER,completed_at INTEGER,rollout_ordinal INTEGER); CREATE TABLE thread_items(thread_id TEXT,turn_id TEXT,created_at_ms INTEGER)',
+    'CREATE TABLE thread_turns(thread_id TEXT,turn_id TEXT,status TEXT,started_at INTEGER,completed_at INTEGER,rollout_ordinal INTEGER); CREATE TABLE thread_items(thread_id TEXT,turn_id TEXT,created_at_ms INTEGER,item_json TEXT,item_type TEXT,rollout_ordinal INTEGER)',
   );
   history
     .prepare('INSERT INTO thread_turns VALUES(?,?,?,?,NULL,1)')
     .run('thread', 'turn', 'inProgress', now / 1000);
+  history.prepare('INSERT INTO thread_items VALUES(?,?,?,?,?,?)').run(
+    'thread',
+    'turn',
+    now,
+    JSON.stringify({
+      type: 'agentMessage',
+      phase: 'commentary',
+      text: 'テストを確認しています',
+    }),
+    'agentMessage',
+    1,
+  );
   history
-    .prepare('INSERT INTO thread_items VALUES(?,?,?)')
-    .run('thread', 'turn', now);
+    .prepare('INSERT INTO thread_items VALUES(?,?,?,?,?,?)')
+    .run(
+      'thread',
+      'turn',
+      now,
+      JSON.stringify({ type: 'reasoning', text: 'PRIVATE REASONING' }),
+      'reasoning',
+      2,
+    );
   history.close();
   const cli = join(dir, 'claude');
   const desktop = join(dir, 'desktop');
@@ -153,6 +172,10 @@ it('reads current Codex turns and Claude Code/Cowork files without modifying the
   );
   const first = await monitor.read();
   expect(first.sources).toEqual({ codex: 'ok', claude: 'ok' });
+  expect(first.tasks.find((t) => t.agent === 'Codex')?.activity).toBe(
+    'テストを確認しています',
+  );
+  expect(JSON.stringify(first)).not.toContain('PRIVATE REASONING');
   expect(first.tasks.map((t) => t.surface).sort()).toEqual([
     'Code',
     'Cowork',
@@ -202,18 +225,30 @@ it('fits one-line tasks into pages, prioritizes attention, and preserves all tas
   const display = displaySchema.parse(
     composeAgentDisplay(emptyState(), snapshot, new Date(now)),
   );
-  expect(display.pages).toHaveLength(4);
-  expect(display.pages.flatMap((page) => page.iconRows ?? [])).toHaveLength(20);
+  expect(display.pages).toHaveLength(3);
+  expect(
+    display.pages.flatMap((page) =>
+      page.scene!.elements.flatMap((e) =>
+        e.type === 'text' && /^(column|running)-/.test(e.id)
+          ? e.text
+              .split('\n')
+              .filter((line) => line.trim() && line !== '処理中…')
+          : [],
+      ),
+    ),
+  ).toHaveLength(20);
   expect(display.pages[0]?.content.split('\n')[1]).toContain('確認待ち');
   for (const page of display.pages) {
     expect(page.content.split('\n')[0]).toBe('2026/9/25 金 13:40');
     expect(page.content).not.toMatch(/LIVE|NOW|SOON|WAITING|稼働記録なし/);
     const taskRows = page.scene!.elements.filter((e) =>
-      e.id.startsWith('row-'),
+      e.id.startsWith('column-'),
     );
-    expect(taskRows.at(-1)?.y).toBe(260);
-    expect(taskRows[0]?.y).toBe(288 - taskRows.length * 28);
-    expect(page.offlineContent.split('\n').length).toBeLessThanOrEqual(10);
+    for (const column of taskRows) {
+      expect(column.y + column.height).toBeLessThanOrEqual(288);
+      expect(column.y).toBeGreaterThan(66);
+    }
+    expect(page.offlineContent.split('\n').length).toBeLessThanOrEqual(19);
     expect(Buffer.byteLength(page.offlineContent)).toBeLessThan(1000);
   }
 });

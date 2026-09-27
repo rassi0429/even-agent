@@ -153,7 +153,7 @@ it('fits native header labels and retains every task within the container budget
     icon: 'running' as const,
     text: 'long task name ' + i,
   }));
-  const pages = agentFlowPages(rows, 5);
+  const pages = agentFlowPages(rows);
   expect(pages.flat()).toEqual(rows);
   for (const page of pages)
     for (const footer of ['', '2/5', 'OFFLINE'])

@@ -2,12 +2,11 @@ import {
   sections,
   type DashboardState,
   type DisplayState,
-  type DisplayIconRow,
   type DeviceTelemetry,
 } from '@even-agent/protocol';
 import type { AgentSnapshot, AgentStatus } from './agents.js';
 import { agentScene } from './agent-scene.js';
-import { agentFlowPages } from './agent-flow.js';
+import { agentFlowPages, type AgentDisplayRow } from './agent-flow.js';
 import type { UsageSnapshot } from './usage.js';
 import { usageText, windowRemaining } from './header-usage.js';
 
@@ -111,7 +110,7 @@ export function composeAgentDisplay(
       b.updatedAt - a.updatedAt ||
       a.id.localeCompare(b.id),
   );
-  const iconRows: DisplayIconRow[] = [];
+  const iconRows: AgentDisplayRow[] = [];
   const rows = tasks.map((task) => {
     const duplicates =
       tasks.filter(
@@ -126,6 +125,9 @@ export function composeAgentDisplay(
         ) + suffix,
       icon: task.status,
       agent: task.agent === 'Codex' ? 'codex' : 'claude',
+      ...(task.status === 'running'
+        ? { detail: task.activity || '処理中…' }
+        : {}),
     });
     return (
       clip(
@@ -180,8 +182,8 @@ export function composeAgentDisplay(
   const usageFallback = usage
     ? `Claude 5H ${usageText(windowRemaining(usage.claude, 300))} W ${usageText(windowRemaining(usage.claude, 10080))}   Codex ${usageText(usage.codex.remainingPercent)}`
     : '';
-  // Native text budget is eight: clock + two usage labels + up to five tasks.
-  const pages = agentFlowPages(iconRows, usage ? 5 : 7);
+  // Each column shares one native multiline text container.
+  const pages = agentFlowPages(iconRows);
   const total = pages.length;
   let offset = 0;
   return {
@@ -190,7 +192,16 @@ export function composeAgentDisplay(
     generatedAt: now.getTime(),
     pages: Array.from({ length: total }, (_, index) => {
       const pageRows = pages[index]!;
-      const body = rows.slice(offset, offset + pageRows.length).join('\n');
+      const body = rows
+        .slice(offset, offset + pageRows.length)
+        .map((row, i) =>
+          pageRows[i]!.icon === 'running'
+            ? `${row}  ${pageRows[i]!.detail || '処理中…'}`
+            : row,
+        )
+        // A dense page must still fit the fallback SDK's 999 UTF-8 byte limit.
+        .map((row) => clip(row, 26))
+        .join('\n');
       offset += pageRows.length;
       const pageNumber = total > 1 ? `\n${index + 1}/${total}` : '';
       const footer = total > 1 ? `${index + 1}/${total}` : '';
@@ -200,7 +211,15 @@ export function composeAgentDisplay(
           .filter(Boolean)
           .join('\n'),
         offlineContent: `${clock}\nOFFLINE\n${body}${pageNumber}`.trimEnd(),
-        iconRows: pageRows.length ? pageRows : undefined,
+        // Legacy iconRows supports eight entries; scene + content carry the full page.
+        iconRows:
+          pageRows.length && pageRows.length <= 8
+            ? pageRows.map((row) => ({
+                text: row.text,
+                icon: row.icon,
+                agent: row.agent,
+              }))
+            : undefined,
         footer,
         scene: agentScene(pageRows, footer, true, clock, usage),
         offlineScene: agentScene(

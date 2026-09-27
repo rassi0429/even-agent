@@ -1,47 +1,89 @@
 import { getTextWidth, pxTruncate } from '@evenrealities/pretext';
 import type { DisplayIconRow } from '@even-agent/protocol';
 
-const WIDTH = 576;
+export const COLUMN_WIDTH = 288;
 export const LABEL_X = 52;
-const GAP = 20;
+export const FLOW_LINE_HEIGHT = 27;
+export const MAX_FLOW_LINES = 8;
 const LABEL_SLACK = 4;
-export const MAX_FLOW_LINES = 5; // Two image tiles can cover at most 144px vertically.
-export function agentFlow(rows: DisplayIconRow[]) {
-  let x = 0;
+const RUNNING_NAME_WIDTH = 144;
+const DETAIL_SEPARATOR = '  ';
+export type AgentDisplayRow = DisplayIconRow & { detail?: string };
+function title(text: string, width: number) {
+  const suffix = text.match(/ #[^\s]{1,4}$/)?.[0] ?? '';
+  return getTextWidth(text) <= width
+    ? text
+    : pxTruncate(
+        text.slice(0, suffix ? -suffix.length : undefined),
+        width - getTextWidth(suffix),
+      ) + suffix;
+}
+export function agentFlow(rows: AgentDisplayRow[]) {
   let line = 0;
+  let column = 0;
   return rows.map((row) => {
-    const maxTextWidth = WIDTH - LABEL_X - LABEL_SLACK;
-    const suffix = row.text.match(/ #[^\s]{1,4}$/)?.[0] ?? '';
-    const text =
-      getTextWidth(row.text) <= maxTextWidth
-        ? row.text
-        : pxTruncate(
-            row.text.slice(0, suffix ? -suffix.length : undefined),
-            maxTextWidth - getTextWidth(suffix),
-          ) + suffix;
-    const textWidth = Math.max(1, getTextWidth(text)) + LABEL_SLACK;
-    const width = LABEL_X + textWidth;
-    if (x && x + width > WIDTH) {
-      x = 0;
+    const wide = row.icon === 'running';
+    if (wide && column) {
       line++;
+      column = 0;
     }
-    const entry = { row, text, x, line, width, textWidth };
-    x += width + GAP;
+    const x = wide ? 0 : column * COLUMN_WIDTH;
+    const width = wide ? 576 : COLUMN_WIDTH;
+    const maxTextWidth = width - LABEL_X - LABEL_SLACK;
+    const text = title(row.text, wide ? RUNNING_NAME_WIDTH : maxTextWidth);
+    const detail = wide
+      ? pxTruncate(
+          row.detail || '処理中…',
+          maxTextWidth - getTextWidth(text + DETAIL_SEPARATOR),
+        )
+      : undefined;
+    const label = detail ? text + DETAIL_SEPARATOR + detail : text;
+    const entry = {
+      row,
+      text,
+      detail,
+      label,
+      wide,
+      span: 1,
+      x,
+      line,
+      width,
+      textWidth: width - LABEL_X,
+    };
+    if (wide || column === 1) {
+      line++;
+      column = 0;
+    } else column = 1;
     return entry;
   });
 }
-
-export function agentFlowPages(
-  rows: DisplayIconRow[],
-  maxRows = 7,
-): DisplayIconRow[][] {
-  const pages: DisplayIconRow[][] = [[]];
+export function flowLines(entries: ReturnType<typeof agentFlow>) {
+  return Math.max(0, ...entries.map((entry) => entry.line + 1));
+}
+// Keep each block disjoint so native text backgrounds never obscure another row.
+export function flowGroups(entries: ReturnType<typeof agentFlow>) {
+  const groups: ReturnType<typeof agentFlow>[] = [];
+  for (const entry of entries) {
+    let group = groups.at(-1);
+    if (!group || group[0]!.wide !== entry.wide) {
+      group = [];
+      groups.push(group);
+    }
+    group.push(entry);
+  }
+  return groups;
+}
+export function agentFlowPages(rows: AgentDisplayRow[]): AgentDisplayRow[][] {
+  const pages: AgentDisplayRow[][] = [[]];
   for (const row of rows) {
     let page = pages.at(-1)!;
-    if (
-      page.length >= maxRows ||
-      agentFlow([...page, row]).at(-1)!.line >= MAX_FLOW_LINES
-    ) {
+    const entries = agentFlow([...page, row]);
+    const textContainers = flowGroups(entries).reduce(
+      (sum, group) => sum + (group.some((e) => e.x === COLUMN_WIDTH) ? 2 : 1),
+      0,
+    );
+    // Five body text containers remain after the three header labels.
+    if (flowLines(entries) > MAX_FLOW_LINES || textContainers > 5) {
       page = [];
       pages.push(page);
     }

@@ -1,76 +1,130 @@
-import type { DisplayIconRow, Scene, SceneElement } from '@even-agent/protocol';
-import { iconStrip, ICON_WIDTH, ROW_HEIGHT, FRAME_MS } from './agent-icons.js';
-import { agentFlow, LABEL_X } from './agent-flow.js';
+import type { Scene, SceneElement } from '@even-agent/protocol';
+import { iconStrip, ICON_WIDTH, FRAME_MS } from './agent-icons.js';
+import {
+  agentFlow,
+  LABEL_X,
+  COLUMN_WIDTH,
+  FLOW_LINE_HEIGHT,
+  flowLines,
+  flowGroups,
+  type AgentDisplayRow,
+} from './agent-flow.js';
 import {
   headerUsageFrames,
   usageText,
   windowRemaining,
 } from './header-usage.js';
 import type { UsageSnapshot } from './usage.js';
-const frameCache = new Map<string, string[]>();
-// Two 288px tiles span the full canvas; 20px is the native minimum image height.
-const ruleFrame = '0'.repeat(288 * 2) + '8'.repeat(288) + '0'.repeat(288 * 17);
+const frameCache = new Map<string, string[][]>();
+// Two wide upper tiles include header graphics. Narrow lower tiles hold only icons.
+// Four images cover the full screen while eight animation frames stay below 1 MiB.
+const tiles = [
+  { x: 0, y: 0, width: 288, height: 144 },
+  { x: 288, y: 0, width: 288, height: 144 },
+  { x: 0, y: 144, width: ICON_WIDTH, height: 144 },
+  { x: 288, y: 144, width: ICON_WIDTH, height: 144 },
+];
 function frames(
   entries: ReturnType<typeof agentFlow>,
-  tile: { x: number; width: number },
-  height: number,
+  top: number,
+  header: ReturnType<typeof headerUsageFrames> | undefined,
+  footer: boolean,
   online: boolean,
 ) {
   const key = JSON.stringify([
     entries.map(({ row, x, line }) => [row.icon, row.agent, x, line]),
-    tile,
-    height,
+    top,
+    !!header,
+    footer,
     online,
   ]);
   const cached = frameCache.get(key);
   if (cached) return cached;
   const moving = online && entries.some((e) => e.row.icon === 'running');
-  const result = Array.from({ length: moving ? 8 : 1 }, (_, frame) => {
-    const data = new Uint8Array((tile.width * height) / 2);
+  const result = tiles.map(() => [] as string[]);
+  for (let frame = 0; frame < (moving ? 8 : 1); frame++) {
+    const pixels = tiles.map((t) => new Uint8Array(t.width * t.height));
+    const pixel = (x: number, y: number, level: number) => {
+      const tileIndex = (y >= 144 ? 2 : 0) + Math.floor(x / 288);
+      const tile = tiles[tileIndex]!;
+      if (
+        x < tile.x ||
+        x >= tile.x + tile.width ||
+        y < tile.y ||
+        y >= tile.y + tile.height
+      )
+        return;
+      pixels[tileIndex]![(y - tile.y) * tile.width + x - tile.x] = level;
+    };
+    if (header) {
+      header.frames.forEach((data, half) => {
+        for (let i = 0; i < data.length; i++)
+          pixel(
+            half * 288 + (i % 288),
+            Math.floor(i / 288),
+            parseInt(data[i]!, 16),
+          );
+      });
+    } else {
+      for (let x = 0; x < 576; x++) pixel(x, footer ? 66 : 38, 8);
+    }
     for (const entry of entries) {
       const icon = iconStrip([entry.row], 0, frame, online);
-      for (let y = 0; y < ROW_HEIGHT; y++)
+      for (let y = 0; y < FLOW_LINE_HEIGHT; y++)
         for (let x = 0; x < ICON_WIDTH; x++) {
-          const tileX = entry.x + x - tile.x;
-          if (tileX < 0 || tileX >= tile.width) continue;
           const src = y * ICON_WIDTH + x;
-          const pixel = (icon[src >> 1]! >> (src % 2 === 0 ? 4 : 0)) & 15;
-          const dst = (entry.line * ROW_HEIGHT + y) * tile.width + tileX;
-          data[dst >> 1]! |= pixel << (dst % 2 === 0 ? 4 : 0);
+          pixel(
+            entry.x + x,
+            top + entry.line * FLOW_LINE_HEIGHT + y,
+            (icon[src >> 1]! >> (src % 2 === 0 ? 4 : 0)) & 15,
+          );
         }
     }
-    return Buffer.from(data).toString('hex');
-  });
-  if (frameCache.size >= 64) frameCache.delete(frameCache.keys().next().value!);
+    pixels.forEach((data, tileIndex) => {
+      const packed = new Uint8Array(data.length / 2);
+      for (let i = 0; i < data.length; i += 2)
+        packed[i / 2] = (data[i]! << 4) | data[i + 1]!;
+      result[tileIndex]!.push(Buffer.from(packed).toString('hex'));
+    });
+  }
+  if (frameCache.size >= 16) frameCache.delete(frameCache.keys().next().value!);
   frameCache.set(key, result);
   return result;
 }
 // Application-specific presentation lives on the PC. The client receives only generic elements.
 export function agentScene(
-  rows: DisplayIconRow[],
+  rows: AgentDisplayRow[],
   footer: string,
   online = true,
   clock = ' ',
   usage?: UsageSnapshot,
 ): Scene {
   const entries = agentFlow(rows);
-  const height = entries.length ? (entries.at(-1)!.line + 1) * ROW_HEIGHT : 0;
+  const lines = flowLines(entries);
+  const height = lines * FLOW_LINE_HEIGHT;
   const top = 288 - height;
-  const elements: SceneElement[] = [
-    {
-      type: 'text',
-      id: 'clock',
-      x: 0,
-      y: 0,
-      width: usage ? 300 : 576,
-      // G2 needs a 28px line box in addition to vertical padding.
-      height: usage ? (footer ? 64 : 36) : 56,
-      text: footer ? `${clock}\n${footer}` : clock,
-      padding: 4,
-      border: 0,
-      brightness: 4,
-    },
-  ];
+  const header = usage ? headerUsageFrames(!!footer, online) : undefined;
+  const bitmaps = frames(entries, top, header, !!footer, online);
+  const elements: SceneElement[] = tiles.map((tile, index) => ({
+    type: 'image',
+    id: index < 2 ? `header-rule-${index}` : `icons-${index - 2}`,
+    ...tile,
+    frames: bitmaps[index]!,
+    frameMs: FRAME_MS,
+    loop: true,
+  }));
+  elements.push({
+    type: 'text',
+    id: 'clock',
+    x: 0,
+    y: 0,
+    width: usage ? 300 : 576,
+    height: footer ? 64 : 36,
+    text: footer ? `${clock}\n${footer}` : clock,
+    padding: 4,
+    border: 0,
+    brightness: 4,
+  });
   if (usage) {
     for (const [provider, x, width, text] of [
       [
@@ -85,7 +139,7 @@ export function agentScene(
         64,
         usageText(online ? usage.codex.remainingPercent : null),
       ],
-    ] as const) {
+    ] as const)
       elements.push({
         type: 'text',
         id: `usage-${provider}`,
@@ -98,69 +152,28 @@ export function agentScene(
         border: 0,
         brightness: 4,
       });
+  }
+  for (const [index, block] of flowGroups(entries).entries()) {
+    const first = block[0]!;
+    const blockLines = block.at(-1)!.line - first.line + 1;
+    for (let column = 0; column < (first.wide ? 1 : 2); column++) {
+      const group = block.filter((e) => e.x === column * COLUMN_WIDTH);
+      if (!group.length) continue;
+      const content = Array<string>(blockLines).fill(' ');
+      for (const entry of group) content[entry.line - first.line] = entry.label;
+      elements.push({
+        type: 'text',
+        id: first.wide ? `running-${index}` : `column-${column}-${index}`,
+        x: column * COLUMN_WIDTH + LABEL_X,
+        y: top + first.line * FLOW_LINE_HEIGHT,
+        width: (first.wide ? 576 : COLUMN_WIDTH) - LABEL_X,
+        height: blockLines * FLOW_LINE_HEIGHT,
+        text: content.join('\n'),
+        padding: 0,
+        border: 0,
+        brightness: 4,
+      });
     }
   }
-  for (let half = 0; entries.length && half < 2; half++) {
-    const start = half * 288;
-    const end = start + 288;
-    const group = entries.filter((e) => e.x < end && e.x + ICON_WIDTH > start);
-    if (!group.length) continue;
-    const left = Math.max(start, Math.min(...group.map((e) => e.x)));
-    const right = Math.min(
-      end,
-      Math.max(...group.map((e) => e.x + ICON_WIDTH)),
-    );
-    const width = Math.max(20, Math.ceil((right - left) / 2) * 2);
-    const tile = { x: Math.min(left, end - width), width };
-    elements.push({
-      type: 'image',
-      id: `icons-${half}`,
-      x: tile.x,
-      y: top,
-      width: tile.width,
-      height,
-      frames: frames(group, tile, height, online),
-      frameMs: FRAME_MS,
-      loop: true,
-    });
-  }
-  elements.push(
-    ...entries.map((entry, index): SceneElement => ({
-      type: 'text',
-      id: `row-${index}`,
-      x: entry.x + LABEL_X,
-      y: top + entry.line * ROW_HEIGHT,
-      // Let the label use the inter-item gap, or all remaining space at line end.
-      // Its container still ends before the next icon and cannot cover it.
-      width:
-        (entries[index + 1]?.line === entry.line
-          ? entries[index + 1]!.x
-          : 576) -
-        entry.x -
-        LABEL_X,
-      height: ROW_HEIGHT,
-      text: entry.text,
-      padding: 0,
-      border: 0,
-      brightness: 4,
-    })),
-  );
-  const header = usage ? headerUsageFrames(!!footer, online) : undefined;
-  const rules: SceneElement[] = [];
-  for (let half = 0; half < 2; half++)
-    rules.push({
-      type: 'image',
-      id: `header-rule-${half}`,
-      x: half * 288,
-      y: header ? 0 : footer ? 60 : 32,
-      width: 288,
-      height: header?.height ?? 20,
-      frames: [header?.frames[half] ?? ruleFrame],
-      frameMs: FRAME_MS,
-      loop: false,
-    });
-  // Header bitmaps are behind the native text; label bounds exclude the icons.
-  return {
-    elements: header ? [...rules, ...elements] : [...elements, ...rules],
-  };
+  return { elements };
 }
