@@ -11,6 +11,7 @@ const DETAIL_SEPARATOR = '  ';
 export type AgentDisplayRow = DisplayIconRow & {
   detail?: string;
   wide?: boolean;
+  summary?: { running: number; done: number; other: string };
 };
 function title(text: string, width: number) {
   const suffix = text.match(/ #[^\s]{1,4}$/)?.[0] ?? '';
@@ -68,7 +69,12 @@ export function flowGroups(entries: ReturnType<typeof agentFlow>) {
   const groups: ReturnType<typeof agentFlow>[] = [];
   for (const entry of entries) {
     let group = groups.at(-1);
-    if (!group || group[0]!.wide !== entry.wide) {
+    if (
+      !group ||
+      group[0]!.wide !== entry.wide ||
+      entry.row.summary ||
+      group[0]!.row.summary
+    ) {
       group = [];
       groups.push(group);
     }
@@ -82,7 +88,13 @@ export function agentFlowPages(rows: AgentDisplayRow[]): AgentDisplayRow[][] {
     let page = pages.at(-1)!;
     const entries = agentFlow([...page, row]);
     const textContainers = flowGroups(entries).reduce(
-      (sum, group) => sum + (group.some((e) => e.x === COLUMN_WIDTH) ? 2 : 1),
+      (sum, group) =>
+        sum +
+        (group[0]!.row.summary
+          ? 3
+          : group.some((e) => e.x === COLUMN_WIDTH)
+            ? 2
+            : 1),
       0,
     );
     // Five body text containers remain after the three header labels.

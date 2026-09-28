@@ -17,19 +17,19 @@ export function kokoaAgentSummary(tasks: AgentTask[]) {
   };
   for (const task of grouped) counts[task.status]++;
   const detail = [
-    `💪${counts.running}`,
-    `✅${counts.done}`,
+    `実行${counts.running}`,
+    `完了${counts.done}`,
     ...(counts.waiting ? [`確認${counts.waiting}`] : []),
     ...(counts.failed ? [`失敗${counts.failed}`] : []),
     ...(counts.stopped ? [`停止${counts.stopped}`] : []),
     ...(counts.unknown ? [`不明${counts.unknown}`] : []),
   ].join(' ');
-  const icon = counts.waiting
-    ? 'waiting'
-    : counts.failed
-      ? 'failed'
-      : counts.running
-        ? 'running'
+  const icon = counts.running
+    ? 'running'
+    : counts.waiting
+      ? 'waiting'
+      : counts.failed
+        ? 'failed'
         : counts.unknown
           ? 'unknown'
           : counts.stopped
@@ -37,6 +37,17 @@ export function kokoaAgentSummary(tasks: AgentTask[]) {
             : 'done';
   return {
     text: `agent ${detail}`,
-    row: { text: 'agent', detail, wide: true, icon, agent: 'none' } as const,
+    row: {
+      text: 'agent',
+      detail,
+      wide: true,
+      icon,
+      agent: 'none',
+      summary: {
+        running: counts.running,
+        done: counts.done,
+        other: detail.split(' ').slice(2).join(' '),
+      },
+    } as const,
   };
 }

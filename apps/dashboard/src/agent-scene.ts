@@ -16,12 +16,12 @@ import {
 } from './header-usage.js';
 import type { UsageSnapshot } from './usage.js';
 const frameCache = new Map<string, string[][]>();
-// Two wide upper tiles include header graphics. Narrow lower tiles hold only icons.
+// Lower-left also holds the summary's inline status icons; text stays native.
 // Four images cover the full screen while eight animation frames stay below 1 MiB.
 const tiles = [
   { x: 0, y: 0, width: 288, height: 144 },
   { x: 288, y: 0, width: 288, height: 144 },
-  { x: 0, y: 144, width: ICON_WIDTH, height: 144 },
+  { x: 0, y: 144, width: 168, height: 144 },
   { x: 288, y: 144, width: ICON_WIDTH, height: 144 },
 ];
 function frames(
@@ -32,7 +32,13 @@ function frames(
   online: boolean,
 ) {
   const key = JSON.stringify([
-    entries.map(({ row, x, line }) => [row.icon, row.agent, x, line]),
+    entries.map(({ row, x, line }) => [
+      row.icon,
+      row.agent,
+      x,
+      line,
+      row.summary ? row.summary.running > 0 : null,
+    ]),
     top,
     !!header,
     footer,
@@ -69,6 +75,29 @@ function frames(
       for (let x = 0; x < 576; x++) pixel(x, footer ? 66 : 38, 8);
     }
     for (const entry of entries) {
+      if (entry.row.summary) {
+        for (const [icon, left] of [
+          [entry.row.summary.running ? 'running' : 'unknown', 68],
+          ['done', 144],
+        ] as const) {
+          const strip = iconStrip(
+            [{ text: '', icon, agent: 'none' }],
+            0,
+            frame,
+            online,
+          );
+          for (let y = 0; y < FLOW_LINE_HEIGHT; y++)
+            for (let x = 0; x < 24; x++) {
+              const src = y * ICON_WIDTH + x;
+              pixel(
+                left + x,
+                top + entry.line * FLOW_LINE_HEIGHT + y,
+                (strip[src >> 1]! >> (src % 2 === 0 ? 4 : 0)) & 15,
+              );
+            }
+        }
+        continue;
+      }
       const icon = iconStrip([entry.row], 0, frame, online);
       for (let y = 0; y < FLOW_LINE_HEIGHT; y++)
         for (let x = 0; x < ICON_WIDTH; x++) {
@@ -155,6 +184,32 @@ export function agentScene(
   }
   for (const [index, block] of flowGroups(entries).entries()) {
     const first = block[0]!;
+    if (first.row.summary) {
+      const counts = first.row.summary;
+      for (const [name, x, width, text] of [
+        ['name', 0, 64, 'agent'],
+        ['running', 96, 44, String(counts.running)],
+        [
+          'done',
+          172,
+          404,
+          [String(counts.done), counts.other].filter(Boolean).join(' '),
+        ],
+      ] as const)
+        elements.push({
+          type: 'text',
+          id: `summary-${name}`,
+          x,
+          y: top + first.line * FLOW_LINE_HEIGHT,
+          width,
+          height: FLOW_LINE_HEIGHT,
+          text,
+          padding: 0,
+          border: 0,
+          brightness: 4,
+        });
+      continue;
+    }
     const blockLines = block.at(-1)!.line - first.line + 1;
     for (let column = 0; column < (first.wide ? 1 : 2); column++) {
       const group = block.filter((e) => e.x === column * COLUMN_WIDTH);
