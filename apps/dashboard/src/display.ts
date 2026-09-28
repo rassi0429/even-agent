@@ -6,6 +6,7 @@ import {
 } from '@even-agent/protocol';
 import type { AgentSnapshot, AgentStatus } from './agents.js';
 import { agentScene } from './agent-scene.js';
+import { isKokoaAgent, kokoaAgentSummary } from './agent-summary.js';
 import { agentFlowPages, type AgentDisplayRow } from './agent-flow.js';
 import type { UsageSnapshot } from './usage.js';
 import { usageText, windowRemaining } from './header-usage.js';
@@ -104,12 +105,15 @@ export function composeAgentDisplay(
     stopped: 4,
     done: 5,
   };
-  const tasks = [...snapshot.tasks].sort(
-    (a, b) =>
-      rank[a.status] - rank[b.status] ||
-      b.updatedAt - a.updatedAt ||
-      a.id.localeCompare(b.id),
-  );
+  const summary = kokoaAgentSummary(snapshot.tasks);
+  const tasks = snapshot.tasks
+    .filter((task) => !isKokoaAgent(task))
+    .sort(
+      (a, b) =>
+        rank[a.status] - rank[b.status] ||
+        b.updatedAt - a.updatedAt ||
+        a.id.localeCompare(b.id),
+    );
   const iconRows: AgentDisplayRow[] = [];
   const rows = tasks.map((task) => {
     const duplicates =
@@ -136,6 +140,10 @@ export function composeAgentDisplay(
       ) + suffix
     );
   });
+  if (summary) {
+    iconRows.unshift(summary.row);
+    rows.unshift(summary.text);
+  }
   for (const agent of ['Codex', 'Claude'] as const) {
     const source = snapshot.sources[agent === 'Codex' ? 'codex' : 'claude'];
     if (source !== 'ok') {
@@ -195,9 +203,11 @@ export function composeAgentDisplay(
       const body = rows
         .slice(offset, offset + pageRows.length)
         .map((row, i) =>
-          pageRows[i]!.icon === 'running'
-            ? `${row}  ${pageRows[i]!.detail || '処理中…'}`
-            : row,
+          summary && offset + i === 0
+            ? summary.text
+            : pageRows[i]!.icon === 'running'
+              ? `${row}  ${pageRows[i]!.detail || '処理中…'}`
+              : row,
         )
         // A dense page must still fit the fallback SDK's 999 UTF-8 byte limit.
         .map((row) => clip(row, 26))

@@ -8,7 +8,10 @@ export const MAX_FLOW_LINES = 8;
 const LABEL_SLACK = 4;
 const RUNNING_NAME_WIDTH = 144;
 const DETAIL_SEPARATOR = '  ';
-export type AgentDisplayRow = DisplayIconRow & { detail?: string };
+export type AgentDisplayRow = DisplayIconRow & {
+  detail?: string;
+  wide?: boolean;
+};
 function title(text: string, width: number) {
   const suffix = text.match(/ #[^\s]{1,4}$/)?.[0] ?? '';
   return getTextWidth(text) <= width
@@ -22,7 +25,7 @@ export function agentFlow(rows: AgentDisplayRow[]) {
   let line = 0;
   let column = 0;
   return rows.map((row) => {
-    const wide = row.icon === 'running';
+    const wide = row.wide || row.icon === 'running';
     if (wide && column) {
       line++;
       column = 0;
