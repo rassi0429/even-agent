@@ -37,6 +37,9 @@ export function projectName(cwd: unknown): string {
     .slice(0, 80);
 }
 const DONE_VISIBLE_MS = 15 * 60_000;
+export function recentCompletion(task: AgentTask, now: number): boolean {
+  return task.status === 'done' && now - task.updatedAt < 60_000;
+}
 const STALE_MS = 180_000;
 const MAX_AGE_MS = 30 * 60_000;
 export function visibleTask(
@@ -45,7 +48,10 @@ export function visibleTask(
 ): AgentTask | undefined {
   if (!task.updatedAt || task.updatedAt > now + 60_000) return;
   const age = now - task.updatedAt;
-  if (task.status !== 'running' || age > STALE_MS) {
+  if (
+    (task.status !== 'running' || age > STALE_MS) &&
+    !recentCompletion(task, now)
+  ) {
     task = { ...task };
     delete task.activity;
   }
@@ -119,10 +125,10 @@ export function parseClaudeEvents(
       event.type === 'user' &&
       blocks.some((block) => block.type === 'tool_result');
     const activity =
-      status === 'running'
+      status === 'running' || status === 'done'
         ? event.type === 'assistant'
           ? (claudeActivity(message) ?? task?.activity)
-          : toolResult
+          : toolResult || event.type === 'result'
             ? task?.activity
             : undefined
         : undefined;
@@ -257,7 +263,11 @@ export class LocalAgentMonitor {
           },
           this.now(),
         );
-        if (task?.status === 'running' && detailQuery) {
+        if (
+          task &&
+          (task.status === 'running' || recentCompletion(task, this.now())) &&
+          detailQuery
+        ) {
           for (const item of detailQuery.all(row.id!, turn.turn_id!)) {
             const detail = codexActivity(item);
             if (detail) {

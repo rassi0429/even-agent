@@ -34,13 +34,19 @@ export function agentFlow(rows: AgentDisplayRow[]) {
     const x = wide ? 0 : column * COLUMN_WIDTH;
     const width = wide ? 576 : COLUMN_WIDTH;
     const maxTextWidth = width - LABEL_X - LABEL_SLACK;
-    const text = title(row.text, wide ? RUNNING_NAME_WIDTH : maxTextWidth);
-    const detail = wide
-      ? pxTruncate(
-          row.detail || '処理中…',
-          maxTextWidth - getTextWidth(text + DETAIL_SEPARATOR),
-        )
-      : undefined;
+    const activity =
+      row.detail || (row.icon === 'running' ? '処理中…' : undefined);
+    const text = title(
+      row.text,
+      wide && activity ? RUNNING_NAME_WIDTH : maxTextWidth,
+    );
+    const detail =
+      wide && activity
+        ? pxTruncate(
+            activity,
+            maxTextWidth - getTextWidth(text + DETAIL_SEPARATOR),
+          )
+        : undefined;
     const label = detail ? text + DETAIL_SEPARATOR + detail : text;
     const entry = {
       row,
@@ -82,7 +88,10 @@ export function flowGroups(entries: ReturnType<typeof agentFlow>) {
   }
   return groups;
 }
-export function agentFlowPages(rows: AgentDisplayRow[]): AgentDisplayRow[][] {
+export function agentFlowPages(
+  rows: AgentDisplayRow[],
+  limits = { lines: MAX_FLOW_LINES, textContainers: 5 },
+): AgentDisplayRow[][] {
   const pages: AgentDisplayRow[][] = [[]];
   for (const row of rows) {
     let page = pages.at(-1)!;
@@ -98,7 +107,10 @@ export function agentFlowPages(rows: AgentDisplayRow[]): AgentDisplayRow[][] {
       0,
     );
     // Five body text containers remain after the three header labels.
-    if (flowLines(entries) > MAX_FLOW_LINES || textContainers > 5) {
+    if (
+      flowLines(entries) > limits.lines ||
+      textContainers > limits.textContainers
+    ) {
       page = [];
       pages.push(page);
     }

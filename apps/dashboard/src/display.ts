@@ -4,9 +4,14 @@ import {
   type DisplayState,
   type DeviceTelemetry,
 } from '@even-agent/protocol';
-import type { AgentSnapshot, AgentStatus } from './agents.js';
-import { agentScene } from './agent-scene.js';
+import {
+  recentCompletion,
+  type AgentSnapshot,
+  type AgentStatus,
+} from './agents.js';
+import { AgentDisplayOrder } from './agent-order.js';
 import { isKokoaAgent, kokoaAgentSummary } from './agent-summary.js';
+import { agentScene } from './agent-scene.js';
 import { agentFlowPages, type AgentDisplayRow } from './agent-flow.js';
 import type { UsageSnapshot } from './usage.js';
 import { usageText, windowRemaining } from './header-usage.js';
@@ -88,6 +93,8 @@ export function composeAgentDisplay(
   now = new Date(),
   device?: DeviceTelemetry,
   usage?: UsageSnapshot,
+  order = new AgentDisplayOrder(),
+  nebi?: { online: string; offline: string },
 ): DisplayState {
   const labels: Record<AgentStatus, string> = {
     running: '実行',
@@ -97,23 +104,11 @@ export function composeAgentDisplay(
     stopped: '停止',
     unknown: '更新なし',
   };
-  const rank: Record<AgentStatus, number> = {
-    waiting: 0,
-    failed: 1,
-    running: 2,
-    unknown: 3,
-    stopped: 4,
-    done: 5,
-  };
   const summary = kokoaAgentSummary(snapshot.tasks);
-  const tasks = snapshot.tasks
-    .filter((task) => !isKokoaAgent(task))
-    .sort(
-      (a, b) =>
-        rank[a.status] - rank[b.status] ||
-        b.updatedAt - a.updatedAt ||
-        a.id.localeCompare(b.id),
-    );
+  const tasks = order.sort(
+    snapshot.tasks.filter((task) => !isKokoaAgent(task)),
+    now.getTime(),
+  );
   const iconRows: AgentDisplayRow[] = [];
   const rows = tasks.map((task) => {
     const duplicates =
@@ -129,8 +124,13 @@ export function composeAgentDisplay(
         ) + suffix,
       icon: task.status,
       agent: task.agent === 'Codex' ? 'codex' : 'claude',
-      ...(task.status === 'running'
-        ? { detail: task.activity || '処理中…' }
+      ...(task.status === 'running' || recentCompletion(task, now.getTime())
+        ? {
+            wide: true,
+            detail:
+              task.activity ||
+              (task.status === 'done' ? '応答完了' : '処理中…'),
+          }
         : {}),
     });
     return (
@@ -190,37 +190,65 @@ export function composeAgentDisplay(
   const usageFallback = usage
     ? `Claude 5H ${usageText(windowRemaining(usage.claude, 300))} W ${usageText(windowRemaining(usage.claude, 10080))}   Codex ${usageText(usage.codex.remainingPercent)}`
     : '';
-  // Each column shares one native multiline text container.
-  const pages = agentFlowPages(iconRows);
+  const fallbackLabels = new Map(iconRows.map((row, i) => [row, rows[i]!]));
+  let pages: AgentDisplayRow[][];
+  if (nebi) {
+    // Five lower-screen lines: summary + three protected running tasks + overflow.
+    // Uniform full-width rows share one text container after the three summary labels.
+    const capacity = iconRows.length > 5 ? 4 : 5;
+    const selected = new Set(iconRows.filter((row) => row.summary));
+    for (const row of iconRows
+      .filter((row) => !row.summary && row.icon === 'running')
+      .slice(0, 3))
+      selected.add(row);
+    for (const row of iconRows) {
+      if (selected.size >= capacity) break;
+      selected.add(row);
+    }
+    const page = iconRows
+      .filter((row) => selected.has(row))
+      .map((row) => {
+        const fullRow = { ...row, wide: true };
+        fallbackLabels.set(fullRow, fallbackLabels.get(row)!);
+        return fullRow;
+      });
+    const hidden = iconRows.length - page.length;
+    if (hidden > 0)
+      page.push({
+        text: `Agent +${hidden}件`,
+        icon: 'none',
+        agent: 'none',
+        wide: true,
+      });
+    pages = [page];
+  } else pages = agentFlowPages(iconRows);
+  const middle = nebi?.online || undefined;
   const total = pages.length;
-  let offset = 0;
   return {
     version: 1,
     updatedAt: state.updatedAt,
     generatedAt: now.getTime(),
     pages: Array.from({ length: total }, (_, index) => {
       const pageRows = pages[index]!;
-      const body = rows
-        .slice(offset, offset + pageRows.length)
-        .map((row, i) =>
-          summary && offset + i === 0
-            ? summary.text
-            : pageRows[i]!.icon === 'running'
-              ? `${row}  ${pageRows[i]!.detail || '処理中…'}`
-              : row,
-        )
+      const body = pageRows
+        .map((row) => {
+          const label = fallbackLabels.get(row) ?? row.text;
+          return row.wide && row.detail && !row.summary
+            ? `${label}  ${row.detail}`
+            : label;
+        })
         // A dense page must still fit the fallback SDK's 999 UTF-8 byte limit.
         .map((row) => clip(row, 26))
         .join('\n');
-      offset += pageRows.length;
       const pageNumber = total > 1 ? `\n${index + 1}/${total}` : '';
       const footer = total > 1 ? `${index + 1}/${total}` : '';
       return {
         id: `page-${index}`,
-        content: [clock, usageFallback, body + pageNumber]
+        content: [clock, usageFallback, middle, body + pageNumber]
           .filter(Boolean)
           .join('\n'),
-        offlineContent: `${clock}\nOFFLINE\n${body}${pageNumber}`.trimEnd(),
+        offlineContent:
+          `${clock}\nOFFLINE\n${nebi ? nebi.offline + '\n' : ''}${body}${pageNumber}`.trimEnd(),
         // Legacy iconRows supports eight entries; scene + content carry the full page.
         iconRows:
           pageRows.length && pageRows.length <= 8
@@ -231,13 +259,14 @@ export function composeAgentDisplay(
               }))
             : undefined,
         footer,
-        scene: agentScene(pageRows, footer, true, clock, usage),
+        scene: agentScene(pageRows, footer, true, clock, usage, middle),
         offlineScene: agentScene(
           pageRows,
-          `OFFLINE ${footer}`.trim(),
+          nebi ? '' : `OFFLINE ${footer}`.trim(),
           false,
           clock,
           usage,
+          nebi?.offline,
         ),
       };
     }),

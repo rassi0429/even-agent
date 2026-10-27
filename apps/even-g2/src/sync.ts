@@ -88,6 +88,7 @@ export class DisplaySync {
     clearTimeout(this.timeout);
     this.abort?.abort();
     if (this.socket) {
+      this.socket.onopen = null;
       this.socket.onclose = null;
       this.socket.onerror = null;
       this.socket.onmessage = null;
@@ -127,11 +128,33 @@ export class DisplaySync {
       return;
     }
     this.socket = socket;
+    const disconnect = (code = 4000, reason = 'Display unavailable') => {
+      if (!current()) return;
+      // A broken transport may never deliver close. Invalidate its callbacks
+      // and presentation now instead of waiting for the closing handshake.
+      this.generation++;
+      clearTimeout(this.timeout);
+      socket.onopen = null;
+      socket.onmessage = null;
+      socket.onerror = null;
+      socket.onclose = null;
+      this.socket = undefined;
+      this.onSensorDisconnect?.();
+      this.schedule();
+      try {
+        socket.close(code, reason);
+      } catch {
+        /* The detached transport cannot make the display live again. */
+      }
+    };
     socket.onopen = () => {
       if (current()) this.sendDevice();
     };
     // A socket is usable only after its initial authoritative snapshot.
-    this.timeout = setTimeout(() => socket.close(), 10000);
+    this.timeout = setTimeout(
+      () => disconnect(4000, 'Initial snapshot timeout'),
+      10000,
+    );
     socket.onmessage = (event) => {
       if (!current()) return;
       try {
@@ -145,7 +168,7 @@ export class DisplaySync {
         clearTimeout(this.timeout);
         // TCP may remain alive while a suspended WebView stops receiving data.
         this.timeout = setTimeout(
-          () => socket.close(4000, 'Snapshot timeout'),
+          () => disconnect(4000, 'Snapshot timeout'),
           45000,
         );
         this.attempt = 0;
@@ -153,17 +176,11 @@ export class DisplaySync {
         this.onStatus(true, 'Live');
       } catch {
         this.onStatus(false, 'Invalid server state');
-        socket.close(1002, 'Invalid state');
+        disconnect(4002, 'Invalid state');
       }
     };
-    socket.onerror = () => socket.close();
-    socket.onclose = () => {
-      if (current()) {
-        this.onSensorDisconnect?.();
-        clearTimeout(this.timeout);
-        this.schedule();
-      }
-    };
+    socket.onerror = () => disconnect();
+    socket.onclose = () => disconnect();
   }
   private schedule() {
     if (this.stopped) return;

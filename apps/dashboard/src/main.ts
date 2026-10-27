@@ -6,6 +6,8 @@ import { LocalAgentMonitor, defaultMonitorPaths } from './agents.js';
 import { ClaudeCloudMonitor, CombinedAgentMonitor } from './claude-cloud.js';
 import { UsageMonitor } from './usage.js';
 import { readCodexUsage, readClaudeUsage } from './usage-readers.js';
+import { NebiMonitor } from './nebi.js';
+import { HealthMonitor } from './health-monitor.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 if (existsSync(resolve(root, '.env')))
@@ -23,7 +25,25 @@ const monitor =
           ),
         )
       : local;
+let nebi: NebiMonitor | undefined;
+let nebiConfigurationError = false;
+if (process.env.NEBI_VIEW_URL) {
+  try {
+    nebi = new NebiMonitor(
+      process.env.NEBI_VIEW_URL,
+      process.env.NEBI_VIEW_TOKEN ?? '',
+    );
+  } catch {
+    nebiConfigurationError = true;
+    console.error(
+      'Nebi page disabled: check the loopback URL and separate read token',
+    );
+  }
+}
 const app = createDashboard({
+  healthMonitor: new HealthMonitor(process.env.SERVER_HEALTH_TARGETS),
+  nebi,
+  nebiConfigurationError,
   serverUrl:
     process.env.DASHBOARD_SERVER_URL ||
     `http://127.0.0.1:${process.env.PORT || 3000}`,

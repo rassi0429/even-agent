@@ -7,7 +7,10 @@ import {
 } from '@even-agent/protocol';
 import type { AgentSnapshot } from './agents.js';
 import { composeAgentDisplay, composeDisplay } from './display.js';
+import { AgentDisplayOrder } from './agent-order.js';
 import type { UsageSnapshot } from './usage.js';
+import type { NebiMonitor } from './nebi.js';
+import type { HealthMonitor } from './health-monitor.js';
 
 export interface DashboardOptions {
   serverUrl: string;
@@ -16,6 +19,9 @@ export interface DashboardOptions {
   now?: () => number;
   intervalMs?: number;
   agentPollMs?: number;
+  nebi?: NebiMonitor;
+  nebiConfigurationError?: boolean;
+  healthMonitor?: HealthMonitor;
   usageMonitor?: {
     refresh(): Promise<void>;
     snapshot(): UsageSnapshot;
@@ -28,6 +34,7 @@ export function createDashboard(options: DashboardOptions) {
   const app = Fastify();
   const now = options.now ?? Date.now;
   const publisherId = randomUUID();
+  const agentOrder = new AgentDisplayOrder();
   let snapshot: AgentSnapshot = {
     tasks: [],
     sources: { codex: 'checking', claude: 'checking' },
@@ -87,15 +94,26 @@ export function createDashboard(options: DashboardOptions) {
       const device = rawDevice.device
         ? deviceTelemetrySchema.parse(rawDevice.device)
         : undefined;
-      const display = options.agentMonitor
-        ? composeAgentDisplay(
-            state,
-            snapshot,
-            new Date(now()),
-            device,
-            options.usageMonitor?.snapshot(),
-          )
-        : composeDisplay(state, new Date(now()));
+      const display =
+        options.agentMonitor || options.nebi || options.healthMonitor?.enabled
+          ? composeAgentDisplay(
+              state,
+              options.agentMonitor
+                ? snapshot
+                : {
+                    tasks: [],
+                    sources: { codex: 'ok', claude: 'ok' },
+                    observedAt: now(),
+                  },
+              new Date(now()),
+              device,
+              options.usageMonitor?.snapshot(),
+              agentOrder,
+              options.healthMonitor?.enabled
+                ? options.healthMonitor.panel(options.nebi?.panel())
+                : options.nebi?.panel(),
+            )
+          : composeDisplay(state, new Date(now()));
       const pages = JSON.stringify(display.pages);
       if (
         pages !== lastPages ||
@@ -132,6 +150,21 @@ export function createDashboard(options: DashboardOptions) {
       publisherId,
       lastPublishedAt,
       error,
+      monitoring: options.healthMonitor?.status() ?? null,
+      nebi: options.nebi
+        ? {
+            ...options.nebi.status(),
+            pageIncluded: latest?.pages.length === 1,
+            contentVisible:
+              latest?.pages.some((page) =>
+                page.scene?.elements.some(
+                  (element) => element.id === 'nebi-middle',
+                ),
+              ) ?? false,
+          }
+        : options.nebiConfigurationError
+          ? { state: 'configuration_error', pageIncluded: false }
+          : null,
       agentMonitor: options.agentMonitor
         ? {
             sources: snapshot.sources,
@@ -159,6 +192,8 @@ export function createDashboard(options: DashboardOptions) {
     return options.usageMonitor?.snapshot() ?? null;
   });
   const timer = setInterval(() => {
+    void options.healthMonitor?.refresh();
+    void options.nebi?.refresh();
     void options.usageMonitor?.refresh();
     if (!publishing) update = tick();
   }, options.intervalMs ?? 1000);
@@ -168,6 +203,8 @@ export function createDashboard(options: DashboardOptions) {
   timer.unref();
   agentTimer.unref();
   app.addHook('onReady', async () => {
+    void options.healthMonitor?.refresh();
+    void options.nebi?.refresh();
     void options.usageMonitor?.refresh();
     void refreshAgents();
     update = tick();
@@ -175,6 +212,8 @@ export function createDashboard(options: DashboardOptions) {
   app.addHook('onClose', async () => {
     stopped = true;
     options.usageMonitor?.stop();
+    await options.nebi?.stop();
+    await options.healthMonitor?.stop();
     clearInterval(timer);
     clearInterval(agentTimer);
     await update;

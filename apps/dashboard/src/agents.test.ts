@@ -166,9 +166,10 @@ it('reads current Codex turns and Claude Code/Cowork files without modifying the
       }) + '\n',
     );
   }
+  let clock = now;
   const monitor = new LocalAgentMonitor(
     { codexHome: codex, claudeHomes: [cli], claudeDesktopRoots: [desktop] },
-    () => now,
+    () => clock,
   );
   const first = await monitor.read();
   expect(first.sources).toEqual({ codex: 'ok', claude: 'ok' });
@@ -181,6 +182,37 @@ it('reads current Codex turns and Claude Code/Cowork files without modifying the
     'Cowork',
     'local',
   ]);
+  const completedHistory = new DatabaseSync(
+    join(codex, 'thread_history_1.sqlite'),
+  );
+  completedHistory
+    .prepare("UPDATE thread_turns SET status='completed',completed_at=?")
+    .run(now / 1000);
+  completedHistory.prepare('INSERT INTO thread_items VALUES(?,?,?,?,?,?)').run(
+    'thread',
+    'turn',
+    now,
+    JSON.stringify({
+      type: 'agentMessage',
+      phase: 'final',
+      text: '修正とテストが完了しました',
+    }),
+    'agentMessage',
+    3,
+  );
+  completedHistory.close();
+  clock = now + 59_999;
+  expect(
+    (await monitor.read()).tasks.find((t) => t.agent === 'Codex'),
+  ).toMatchObject({
+    status: 'done',
+    activity: '修正とテストが完了しました',
+  });
+  clock = now + 60_000;
+  expect(
+    (await monitor.read()).tasks.find((t) => t.agent === 'Codex')?.activity,
+  ).toBeUndefined();
+  clock = now;
   // Reopening a historical file must not make an old session live.
   await writeFile(
     join(cli, 'projects/project/session.jsonl'),

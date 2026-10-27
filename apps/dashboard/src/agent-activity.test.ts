@@ -70,7 +70,7 @@ it('bounds excerpts and removes common credentials, URLs and terminal controls',
   expect(result).toContain('[redacted]');
   expect(activityText('あ'.repeat(4000))).toHaveLength(160);
 });
-it('keeps tool activity across tool results and clears it on a new turn, completion or stale status', () => {
+it('keeps activity across tool results and briefly after completion, but clears it on a new turn or stale status', () => {
   const now = Date.now();
   const event = (type: string, message: unknown, offset: number) => ({
     type,
@@ -114,11 +114,23 @@ it('keeps tool activity across tool results and clears it on a new turn, complet
       [
         ...events,
         event('assistant', { content: '最終回答', stop_reason: 'end_turn' }, 4),
+        event('result', {}, 5),
       ],
       'session',
       'Code',
     )?.activity,
-  ).toBeUndefined();
+  ).toBe('最終回答');
+  const done = parseClaudeEvents(
+    [
+      ...events,
+      event('assistant', { content: '最終回答', stop_reason: 'end_turn' }, 4),
+    ],
+    'session',
+    'Code',
+  )!;
+  expect(done.activity).toBe('最終回答');
+  expect(visibleTask(done, done.updatedAt + 59_999)?.activity).toBe('最終回答');
+  expect(visibleTask(done, done.updatedAt + 60_000)?.activity).toBeUndefined();
   expect(visibleTask(task, now + 200000)).toMatchObject({ status: 'unknown' });
   expect(visibleTask(task, now + 200000)?.activity).toBeUndefined();
 });

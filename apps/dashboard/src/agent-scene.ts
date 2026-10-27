@@ -127,6 +127,7 @@ export function agentScene(
   online = true,
   clock = ' ',
   usage?: UsageSnapshot,
+  middle?: string,
 ): Scene {
   const entries = agentFlow(rows);
   const lines = flowLines(entries);
@@ -182,6 +183,19 @@ export function agentScene(
         brightness: 4,
       });
   }
+  if (middle)
+    elements.push({
+      type: 'text',
+      id: 'nebi-middle',
+      x: 8,
+      y: 48,
+      width: 560,
+      height: 90,
+      text: middle,
+      padding: 0,
+      border: 0,
+      brightness: 4,
+    });
   for (const [index, block] of flowGroups(entries).entries()) {
     const first = block[0]!;
     if (first.row.summary) {
